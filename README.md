@@ -26,8 +26,8 @@ A modern desktop application for biomechanics motion analysis built on top of [S
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/sports2d-ui.git
-cd sports2d-ui
+git clone [https://github.com/YOUR_USERNAME/sports2d-ui.git](https://github.com/Noureldin-Islam-2006/Motion-Analysis-Task1)
+cd Motion-Analysis-Task1
 
 # 2. Create a virtual environment (recommended)
 python -m venv venv
