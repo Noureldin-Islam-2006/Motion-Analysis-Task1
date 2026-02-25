@@ -1,0 +1,51 @@
+
+
+---------------------------------------------------------------------
+Processing C:\Users\Noure\OneDrive\Desktop\sports2d\Motion-Analysis-Task1\slowmo.mp4
+On Wednesday 25. February 2026, 16:21:44
+---------------------------------------------------------------------
+
+Estimating pose...
+Using HALPE_26 model (body and feet) for pose estimation in balanced mode.
+
+No valid CUDA installation found: using OpenVINO backend with CPU.
+Persons detection is run every 4 frames (pose estimation is run at every frame). Tracking is done with sports2d.
+All persons are analyzed. Person ordering method is on_click.
+keypoint_likelihood_threshold=0.3, average_likelihood_threshold=0.5, keypoint_number_threshold=0.3
+Skipping right wrist angle computation because at least one of the following keypoints is not provided by the pose estimation model: ['RElbow', 'RWrist', 'RIndex'].
+Skipping left wrist angle computation because at least one of the following keypoints is not provided by the pose estimation model: ['LElbow', 'LIndex', 'LWrist'].
+
+Processing video stream...
+Failed to grab frame 711.
+Failed to grab frame 712.
+Failed to grab frame 713.
+Video processing completed.
+You selected more (or less) than the required 4 persons. "nb_persons_to_detect" will be set to 1.
+Reordered persons: IDs of persons [0] become [0].
+
+Post-processing pose:
+- Person 0: Interpolating missing sequences if they are smaller than 10 frames. Large gaps filled with zeros.
+Rejecting outliers with a Hampel filter.
+Filtering with Butterworth filter, 4th order, 6.0 Hz.
+Pose in pixels saved to C:\Users\Noure\OneDrive\Desktop\sports2d\Motion-Analysis-Task1\slowmo_Sports2D\slowmo_Sports2D_px_person00.trc.
+
+Converting pose to meters:
+Converting from pixels to meters using a person height of 1.65 in meters (manual input), and of 275.75 in pixels (calculated).
+Perspective effects corrected using a camera-to-person distance of 10.00 m (obtained from a manual input).
+Camera horizon: -5.70°, corrected using gait kinematics.
+Floor level: 309.44 px (from the top of the image), gait starting at 0.00 px in the front direction for the first person. Corrected using gait kinematics.
+
+Calibration saved to C:\Users\Noure\OneDrive\Desktop\sports2d\Motion-Analysis-Task1\slowmo_Sports2D\slowmo_Sports2D_calib.toml.
+- Person 0: Seen from the front.
+Pose plots (m) saved in C:\Users\Noure\OneDrive\Desktop\sports2d\Motion-Analysis-Task1\slowmo_Sports2D\slowmo_Sports2D_graphs.
+Pose in meters saved to C:\Users\Noure\OneDrive\Desktop\sports2d\Motion-Analysis-Task1\slowmo_Sports2D\slowmo_Sports2D_m_person00.trc. Also saved in c3d format.
+
+Post-processing angles (without inverse kinematics):
+- Person 0: Interpolating missing sequences if they are smaller than 10 frames. Large gaps filled with zeros.
+Rejecting outliers with a Hampel filter.
+Filtering with Butterworth filter, 4th order, 6.0 Hz.
+Correcting segment angles by removing the -5.7° floor angle.
+Angles saved to C:\Users\Noure\OneDrive\Desktop\sports2d\Motion-Analysis-Task1\slowmo_Sports2D\slowmo_Sports2D_angles_person00.mot.
+Pose plots (m) saved in C:\Users\Noure\OneDrive\Desktop\sports2d\Motion-Analysis-Task1\slowmo_Sports2D\slowmo_Sports2D_graphs.
+
+Saving images of processed pose and angles:

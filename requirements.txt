@@ -1,0 +1,8 @@
+PyQt5==5.15.11
+pyqtgraph==0.14.0
+QtAwesome==1.4.1
+opencv-python==4.13.0.92
+scipy==1.17.1
+pandas==3.0.1
+numpy==2.2.6
+sports2d==0.8.27
