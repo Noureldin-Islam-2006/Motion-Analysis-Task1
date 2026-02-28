@@ -372,11 +372,16 @@ class Sports2DApp(QtWidgets.QMainWindow):
         self.show_trajectory = False
         self.show_relative_trajectory = False
 
+        # Coordinate mode: absolute vs relative (hip = 0,0)
+        self.use_relative_coords = False
+
         # Analysis worker
         self._worker = None
 
         # Cached kinematics
         self._cache_time = None
+        self._cache_pos_x = None
+        self._cache_pos_y = None
         self._cache_vx = None
         self._cache_vy = None
         self._cache_vtotal = None
@@ -483,6 +488,14 @@ class Sports2DApp(QtWidgets.QMainWindow):
         self.cal_info.setStyleSheet("color: #F9E2AF; font-size: 11px; border: none;")
         right.addWidget(self.cal_info)
 
+        # Relative / Absolute toggle
+        self.coord_toggle_btn = QtWidgets.QPushButton(qta.icon('fa5s.crosshairs', color='white'), "  Absolute Mode")
+        self.coord_toggle_btn.setObjectName("coordToggleBtn")
+        self.coord_toggle_btn.setToolTip("Switch between absolute coordinates and\nrelative coordinates (Hip = 0,0)")
+        self.coord_toggle_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.coord_toggle_btn.clicked.connect(self._toggle_coord_mode)
+        right.addWidget(self.coord_toggle_btn)
+
         # Current Frame Data card
         data_card = QtWidgets.QFrame()
         data_card.setObjectName("dataCard")
@@ -525,6 +538,11 @@ class Sports2DApp(QtWidgets.QMainWindow):
         graphs_lay = QtWidgets.QVBoxLayout(graphs_inner)
         graphs_lay.setSpacing(6)
 
+        self.graph_pos = pg.PlotWidget(title="Position (px)")
+        self._style_graph(self.graph_pos, 'Position', 'px')
+        self.graph_pos.addLegend(offset=(60, 5))
+        graphs_lay.addWidget(self.graph_pos)
+
         self.graph_vel = pg.PlotWidget(title="Linear Velocity")
         self._style_graph(self.graph_vel, 'Speed', 'px/s')
         self.graph_vel.addLegend(offset=(60, 5))
@@ -543,7 +561,7 @@ class Sports2DApp(QtWidgets.QMainWindow):
         self._style_graph(self.graph_ang_acc, 'α', 'deg/s²')
         graphs_lay.addWidget(self.graph_ang_acc)
 
-        for g in [self.graph_vel, self.graph_acc, self.graph_ang_vel, self.graph_ang_acc]:
+        for g in [self.graph_pos, self.graph_vel, self.graph_acc, self.graph_ang_vel, self.graph_ang_acc]:
             vl = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('#F38BA8', width=2))
             g.addItem(vl)
             self.v_lines.append(vl)
@@ -591,6 +609,8 @@ class Sports2DApp(QtWidgets.QMainWindow):
         #calBtn:hover { background-color: #FAD87D; }
         #selHeader { color: #89B4FA; font-size: 16px; font-weight: bold; border: none; }
         #dataCard { background-color: #181825; border-radius: 10px; border: 1px solid #313244; padding: 12px; }
+        #coordToggleBtn { background-color: #45475a; border-radius: 6px; padding: 10px; color: #cdd6f4; border: none; font-weight: bold; }
+        #coordToggleBtn:hover { background-color: #585b70; }
         #trajBtn { background-color: #45475a; border-radius: 6px; padding: 10px; color: #cdd6f4; border: none; }
         #trajBtn:hover { background-color: #585b70; }
         #relTrajBtn { background-color: #45475a; border-radius: 6px; padding: 10px; color: #cdd6f4; border: none; }
@@ -607,9 +627,14 @@ class Sports2DApp(QtWidgets.QMainWindow):
         u = self.unit_name
         us = f"{u}/s"
         us2 = f"{u}/s²"
-        self.stat_pos_label.setText(f"Position ({u}):")
+        if self.use_relative_coords:
+            self.stat_pos_label.setText(f"Position rel. Hip ({u}):")
+        else:
+            self.stat_pos_label.setText(f"Position ({u}):")
         self.stat_vel_label.setText(f"Linear Velocity ({us}):")
         self.stat_acc_label.setText(f"Linear Acceleration ({us2}):")
+        self.graph_pos.setTitle(f"Position ({u})")
+        self.graph_pos.setLabel('left', 'Position', units=u)
         self.graph_vel.setTitle(f"Linear Velocity ({us})")
         self.graph_vel.setLabel('left', 'Speed', units=us)
         self.graph_acc.setTitle(f"Linear Acceleration ({us2})")
@@ -703,6 +728,29 @@ class Sports2DApp(QtWidgets.QMainWindow):
         return px_val
 
     # ── Trajectory ──────────────────────────────────────────────────────────
+
+    def _toggle_coord_mode(self):
+        """Toggle between absolute and relative (hip = 0,0) coordinate mode."""
+        self.use_relative_coords = not self.use_relative_coords
+        if self.use_relative_coords:
+            self.coord_toggle_btn.setText("  Relative Mode (Hip = 0,0)")
+            self.coord_toggle_btn.setIcon(qta.icon('fa5s.compress-arrows-alt', color='#1e1e2e'))
+            self.coord_toggle_btn.setStyleSheet("background-color: #89B4FA; color: #1e1e2e; font-weight: bold;")
+        else:
+            self.coord_toggle_btn.setText("  Absolute Mode")
+            self.coord_toggle_btn.setIcon(qta.icon('fa5s.crosshairs', color='white'))
+            self.coord_toggle_btn.setStyleSheet("")
+        # Update position label to reflect mode
+        u = self.unit_name
+        if self.use_relative_coords:
+            self.stat_pos_label.setText(f"Position rel. Hip ({u}):")
+        else:
+            self.stat_pos_label.setText(f"Position ({u}):")
+        # Recompute and refresh everything
+        if self.selected_joint:
+            self._compute_kinematics()
+            self._update_all_graphs()
+            self._set_frame(self.current_frame)
 
     def _toggle_trajectory(self):
         self.show_trajectory = not self.show_trajectory
@@ -911,8 +959,23 @@ class Sports2DApp(QtWidgets.QMainWindow):
 
         s = 1.0 / self.px_per_unit if self.px_per_unit else 1.0
 
-        vx = np.gradient(c['x'] * s, dt)
-        vy = np.gradient(c['y'] * s, dt)
+        # Get raw x/y arrays
+        raw_x = c['x'].copy()
+        raw_y = c['y'].copy()
+
+        # Relative mode: subtract Hip position so Hip becomes (0,0)
+        if self.use_relative_coords and 'Hip' in self.trc_data['markers']:
+            hip = self.trc_data['markers']['Hip']
+            n = min(len(raw_x), len(hip['x']))
+            raw_x[:n] = raw_x[:n] - hip['x'][:n]
+            raw_y[:n] = raw_y[:n] - hip['y'][:n]
+
+        # Cache scaled positions for the position graph
+        self._cache_pos_x = raw_x * s
+        self._cache_pos_y = raw_y * s
+
+        vx = np.gradient(raw_x * s, dt)
+        vy = np.gradient(raw_y * s, dt)
         self._cache_vx = smooth(vx)
         self._cache_vy = smooth(vy)
         self._cache_vtotal = smooth(np.sqrt(vx**2 + vy**2))
@@ -946,8 +1009,16 @@ class Sports2DApp(QtWidgets.QMainWindow):
             return
         t = self._cache_time
 
+        # Position graph
+        self.graph_pos.clear()
+        self.graph_pos.addItem(self.v_lines[0])
+        if self._cache_pos_x is not None:
+            n = min(len(t), len(self._cache_pos_x))
+            self.graph_pos.plot(t[:n], self._cache_pos_x[:n], pen=pg.mkPen('#F38BA8', width=1.5), name="X")
+            self.graph_pos.plot(t[:n], self._cache_pos_y[:n], pen=pg.mkPen('#89B4FA', width=1.5), name="Y")
+
         self.graph_vel.clear()
-        self.graph_vel.addItem(self.v_lines[0])
+        self.graph_vel.addItem(self.v_lines[1])
         if self._cache_vx is not None:
             n = min(len(t), len(self._cache_vx))
             self.graph_vel.plot(t[:n], self._cache_vx[:n], pen=pg.mkPen('#F38BA8', width=1.5), name="Vx")
@@ -955,7 +1026,7 @@ class Sports2DApp(QtWidgets.QMainWindow):
             self.graph_vel.plot(t[:n], self._cache_vtotal[:n], pen=pg.mkPen('#A6E3A1', width=2), name="Vtotal")
 
         self.graph_acc.clear()
-        self.graph_acc.addItem(self.v_lines[1])
+        self.graph_acc.addItem(self.v_lines[2])
         if self._cache_ax is not None:
             n = min(len(t), len(self._cache_ax))
             self.graph_acc.plot(t[:n], self._cache_ax[:n], pen=pg.mkPen('#F38BA8', width=1.5), name="Ax")
@@ -963,7 +1034,7 @@ class Sports2DApp(QtWidgets.QMainWindow):
             self.graph_acc.plot(t[:n], self._cache_atotal[:n], pen=pg.mkPen('#FAB387', width=2), name="Atotal")
 
         self.graph_ang_vel.clear()
-        self.graph_ang_vel.addItem(self.v_lines[2])
+        self.graph_ang_vel.addItem(self.v_lines[3])
         if self._cache_ang_vel is not None:
             label = self._cache_angle_name or "?"
             self.graph_ang_vel.setTitle(f"Angular Velocity: {label}")
@@ -973,7 +1044,7 @@ class Sports2DApp(QtWidgets.QMainWindow):
             self.graph_ang_vel.setTitle("Angular Velocity (no angle data)")
 
         self.graph_ang_acc.clear()
-        self.graph_ang_acc.addItem(self.v_lines[3])
+        self.graph_ang_acc.addItem(self.v_lines[4])
         if self._cache_ang_acc is not None:
             label = self._cache_angle_name or "?"
             self.graph_ang_acc.setTitle(f"Angular Acceleration: {label}")
@@ -997,6 +1068,12 @@ class Sports2DApp(QtWidgets.QMainWindow):
                 w.setText("N/A")
             return
 
+        # In relative mode, subtract hip position
+        if self.use_relative_coords and 'Hip' in self.trc_data['markers']:
+            hip = self.trc_data['markers']['Hip']
+            if idx < len(hip['x']) and not np.isnan(hip['x'][idx]):
+                x = x - hip['x'][idx]
+                y = y - hip['y'][idx]
         sx, sy = self._scale_val(x), self._scale_val(y)
         self.stat_pos.setText(f"({sx:.4f}, {sy:.4f})")
 
