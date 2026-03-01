@@ -5,6 +5,7 @@ import subprocess
 import pandas as pd
 import numpy as np
 import pyqtgraph as pg
+import pyqtgraph.exporters
 from PyQt5 import QtWidgets, QtCore, QtGui
 import qtawesome as qta
 from scipy.signal import savgol_filter
@@ -389,6 +390,7 @@ class Sports2DApp(QtWidgets.QMainWindow):
         self._cache_ay = None
         self._cache_atotal = None
         self._cache_angle = None
+        self._cache_angle_180 = None
         self._cache_ang_vel = None
         self._cache_ang_acc = None
         self._cache_angle_name = None
@@ -468,6 +470,18 @@ class Sports2DApp(QtWidgets.QMainWindow):
         self.cal_btn.setToolTip("Draw a line on the video and enter its real-world length")
         self.cal_btn.clicked.connect(self._start_calibration)
         act.addWidget(self.cal_btn)
+
+        export_graph_btn = QtWidgets.QPushButton(qta.icon('fa5s.image', color='#1e1e2e'), "  Export Graphs")
+        export_graph_btn.setObjectName("exportGraphBtn")
+        export_graph_btn.setToolTip("Export all graphs as PNG images")
+        export_graph_btn.clicked.connect(self._export_graphs)
+        act.addWidget(export_graph_btn)
+
+        export_csv_btn = QtWidgets.QPushButton(qta.icon('fa5s.file-csv', color='#1e1e2e'), "  Export CSV")
+        export_csv_btn.setObjectName("exportCsvBtn")
+        export_csv_btn.setToolTip("Export kinematic data as a CSV file")
+        export_csv_btn.clicked.connect(self._export_csv)
+        act.addWidget(export_csv_btn)
 
         self.status_lbl = QtWidgets.QLabel("Ready")
         self.status_lbl.setStyleSheet("color: #585b70; font-size: 12px;")
@@ -561,7 +575,11 @@ class Sports2DApp(QtWidgets.QMainWindow):
         self._style_graph(self.graph_ang_acc, 'α', 'deg/s²')
         graphs_lay.addWidget(self.graph_ang_acc)
 
-        for g in [self.graph_pos, self.graph_vel, self.graph_acc, self.graph_ang_vel, self.graph_ang_acc]:
+        self.graph_angle_180 = pg.PlotWidget(title="Supplementary Angle 180 − θ (deg)")
+        self._style_graph(self.graph_angle_180, '180−θ', 'deg')
+        graphs_lay.addWidget(self.graph_angle_180)
+
+        for g in [self.graph_pos, self.graph_vel, self.graph_acc, self.graph_ang_vel, self.graph_ang_acc, self.graph_angle_180]:
             vl = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('#F38BA8', width=2))
             g.addItem(vl)
             self.v_lines.append(vl)
@@ -607,6 +625,10 @@ class Sports2DApp(QtWidgets.QMainWindow):
         #analyzeBtn:hover { background-color: #94E298; }
         #calBtn { background-color: #F9E2AF; color: #1e1e2e; font-weight: bold; padding: 10px 16px; }
         #calBtn:hover { background-color: #FAD87D; }
+        #exportGraphBtn { background-color: #CBA6F7; color: #1e1e2e; font-weight: bold; padding: 10px 16px; }
+        #exportGraphBtn:hover { background-color: #D4B8FA; }
+        #exportCsvBtn { background-color: #89B4FA; color: #1e1e2e; font-weight: bold; padding: 10px 16px; }
+        #exportCsvBtn:hover { background-color: #9CC3FB; }
         #selHeader { color: #89B4FA; font-size: 16px; font-weight: bold; border: none; }
         #dataCard { background-color: #181825; border-radius: 10px; border: 1px solid #313244; padding: 12px; }
         #coordToggleBtn { background-color: #45475a; border-radius: 6px; padding: 10px; color: #cdd6f4; border: none; font-weight: bold; }
@@ -992,6 +1014,7 @@ class Sports2DApp(QtWidgets.QMainWindow):
             raw_angle = self.mot_data['angles'][angle_col]
             n = min(len(t), len(raw_angle))
             self._cache_angle = raw_angle[:n]
+            self._cache_angle_180 = 180.0 - self._cache_angle
             ang_vel = np.gradient(self._cache_angle, dt)
             self._cache_ang_vel = smooth(ang_vel)
             ang_acc = np.gradient(self._cache_ang_vel, dt)
@@ -999,6 +1022,7 @@ class Sports2DApp(QtWidgets.QMainWindow):
         else:
             self._cache_angle_name = None
             self._cache_angle = None
+            self._cache_angle_180 = None
             self._cache_ang_vel = None
             self._cache_ang_acc = None
 
@@ -1052,6 +1076,16 @@ class Sports2DApp(QtWidgets.QMainWindow):
             self.graph_ang_acc.plot(t[:n], self._cache_ang_acc[:n], pen=pg.mkPen('#F9E2AF', width=2))
         else:
             self.graph_ang_acc.setTitle("Angular Acceleration (no angle data)")
+
+        self.graph_angle_180.clear()
+        self.graph_angle_180.addItem(self.v_lines[5])
+        if self._cache_angle_180 is not None:
+            label = self._cache_angle_name or "?"
+            self.graph_angle_180.setTitle(f"Supplementary Angle (180 − θ): {label}")
+            n = min(len(t), len(self._cache_angle_180))
+            self.graph_angle_180.plot(t[:n], self._cache_angle_180[:n], pen=pg.mkPen('#94E2D5', width=2))
+        else:
+            self.graph_angle_180.setTitle("Supplementary Angle 180 − θ (no angle data)")
 
     # ── Stats ───────────────────────────────────────────────────────────────
 
@@ -1115,6 +1149,79 @@ class Sports2DApp(QtWidgets.QMainWindow):
 
     def _seek(self, val):
         self._set_frame(val)
+
+    # ── Export ───────────────────────────────────────────────────────────────
+
+    def _export_graphs(self):
+        if self._cache_time is None or self.selected_joint is None:
+            QtWidgets.QMessageBox.warning(self, "No Data", "Select a joint first.")
+            return
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Folder to Save Graphs")
+        if not folder:
+            return
+        joint = self.selected_joint
+        graphs = {
+            'position': self.graph_pos,
+            'linear_velocity': self.graph_vel,
+            'linear_acceleration': self.graph_acc,
+            'angular_velocity': self.graph_ang_vel,
+            'angular_acceleration': self.graph_ang_acc,
+            'supplementary_angle_180': self.graph_angle_180,
+        }
+        saved = 0
+        for name, graph in graphs.items():
+            try:
+                exporter = pg.exporters.ImageExporter(graph.plotItem)
+                exporter.parameters()['width'] = 1200
+                filepath = os.path.join(folder, f"{joint}_{name}.png")
+                exporter.export(filepath)
+                saved += 1
+            except Exception as e:
+                print(f"Error exporting {name}: {e}")
+        self.status_lbl.setText(f"Exported {saved} graphs to {os.path.basename(folder)}/")
+        self.status_lbl.setStyleSheet("color: #A6E3A1; font-size: 12px; font-weight: bold;")
+
+    def _export_csv(self):
+        if self._cache_time is None or self.selected_joint is None:
+            QtWidgets.QMessageBox.warning(self, "No Data", "Select a joint first.")
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save CSV", f"{self.selected_joint}_kinematics.csv",
+            "CSV Files (*.csv)")
+        if not path:
+            return
+        t = self._cache_time
+        n = len(t)
+        data = {'Time_s': t[:n]}
+        u = self.unit_name
+        if self._cache_pos_x is not None:
+            ln = min(n, len(self._cache_pos_x))
+            data[f'PosX_{u}'] = self._cache_pos_x[:ln]
+            data[f'PosY_{u}'] = self._cache_pos_y[:ln]
+        if self._cache_vx is not None:
+            ln = min(n, len(self._cache_vx))
+            data[f'Vx_{u}/s'] = self._cache_vx[:ln]
+            data[f'Vy_{u}/s'] = self._cache_vy[:ln]
+            data[f'Vtotal_{u}/s'] = self._cache_vtotal[:ln]
+        if self._cache_ax is not None:
+            ln = min(n, len(self._cache_ax))
+            data[f'Ax_{u}/s2'] = self._cache_ax[:ln]
+            data[f'Ay_{u}/s2'] = self._cache_ay[:ln]
+            data[f'Atotal_{u}/s2'] = self._cache_atotal[:ln]
+        if self._cache_angle is not None:
+            ln = min(n, len(self._cache_angle))
+            data['Angle_deg'] = self._cache_angle[:ln]
+            data['Angle_180_deg'] = self._cache_angle_180[:ln]
+        if self._cache_ang_vel is not None:
+            ln = min(n, len(self._cache_ang_vel))
+            data['AngVel_deg/s'] = self._cache_ang_vel[:ln]
+        if self._cache_ang_acc is not None:
+            ln = min(n, len(self._cache_ang_acc))
+            data['AngAcc_deg/s2'] = self._cache_ang_acc[:ln]
+        df = pd.DataFrame(data)
+        df.to_csv(path, index=False)
+        self.status_lbl.setText(f"CSV saved: {os.path.basename(path)}")
+        self.status_lbl.setStyleSheet("color: #A6E3A1; font-size: 12px; font-weight: bold;")
 
 
 if __name__ == "__main__":
