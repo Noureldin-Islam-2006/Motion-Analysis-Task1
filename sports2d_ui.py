@@ -376,6 +376,9 @@ class Sports2DApp(QtWidgets.QMainWindow):
         # Coordinate mode: absolute vs relative (hip = 0,0)
         self.use_relative_coords = False
 
+        # Graph theme
+        self.graph_dark_mode = True
+
         # Analysis worker
         self._worker = None
 
@@ -483,6 +486,12 @@ class Sports2DApp(QtWidgets.QMainWindow):
         export_csv_btn.clicked.connect(self._export_csv)
         act.addWidget(export_csv_btn)
 
+        export_trail_btn = QtWidgets.QPushButton(qta.icon('fa5s.running', color='#1e1e2e'), "  Export Motion Trail")
+        export_trail_btn.setObjectName("exportTrailBtn")
+        export_trail_btn.setToolTip("Export a Stick Figure Motion Trail image")
+        export_trail_btn.clicked.connect(self._export_motion_trail)
+        act.addWidget(export_trail_btn)
+
         self.status_lbl = QtWidgets.QLabel("Ready")
         self.status_lbl.setStyleSheet("color: #585b70; font-size: 12px;")
         act.addWidget(self.status_lbl, 1)
@@ -544,6 +553,13 @@ class Sports2DApp(QtWidgets.QMainWindow):
         self.rel_traj_btn.clicked.connect(self._toggle_relative_trajectory)
         right.addWidget(self.rel_traj_btn)
 
+        self.graph_theme_btn = QtWidgets.QPushButton(qta.icon('fa5s.adjust', color='white'), "  Graphs: Dark Mode")
+        self.graph_theme_btn.setObjectName("graphThemeBtn")
+        self.graph_theme_btn.setToolTip("Toggle between dark and light graph backgrounds\n(Light mode is ideal for exporting to papers)")
+        self.graph_theme_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.graph_theme_btn.clicked.connect(self._toggle_graph_theme)
+        right.addWidget(self.graph_theme_btn)
+
         # Graphs
         graphs_scroll = QtWidgets.QScrollArea()
         graphs_scroll.setWidgetResizable(True)
@@ -604,10 +620,37 @@ class Sports2DApp(QtWidgets.QMainWindow):
         return val
 
     def _style_graph(self, g, y_label, y_unit):
-        g.setBackground('#181825')
-        g.showGrid(x=True, y=True, alpha=0.15)
-        g.setLabel('left', y_label, units=y_unit)
-        g.setLabel('bottom', 'Time', units='s')
+        if self.graph_dark_mode:
+            g.setBackground('#181825')
+            g.showGrid(x=True, y=True, alpha=0.15)
+            axis_pen = pg.mkPen('#6c7086')
+            text_color = '#cdd6f4'
+        else:
+            g.setBackground('w')
+            g.showGrid(x=True, y=True, alpha=0.25)
+            axis_pen = pg.mkPen('#333333')
+            text_color = '#1e1e2e'
+        for axis_name in ['left', 'bottom']:
+            ax = g.getAxis(axis_name)
+            ax.setPen(axis_pen)
+            ax.setTextPen(pg.mkPen(text_color))
+        g.setLabel('left', y_label, units=y_unit, color=text_color)
+        g.setLabel('bottom', 'Time', units='s', color=text_color)
+        title_color = text_color
+        g.setTitle(g.plotItem.titleLabel.text, color=title_color)
+
+        # Style the legend if it exists
+        legend = g.plotItem.legend
+        if legend:
+            legend.setLabelTextColor(text_color)
+            if not self.graph_dark_mode:
+                # Add a subtle background to light mode legend for readability
+                legend.setBrush(pg.mkBrush(255, 255, 255, 200))
+                legend.setPen(pg.mkPen('#cccccc'))
+            else:
+                legend.setBrush(pg.mkBrush(24, 24, 37, 200))
+                legend.setPen(pg.mkPen('#313244'))
+
         g.setMinimumHeight(160)
 
     def _apply_styles(self):
@@ -637,6 +680,8 @@ class Sports2DApp(QtWidgets.QMainWindow):
         #trajBtn:hover { background-color: #585b70; }
         #relTrajBtn { background-color: #45475a; border-radius: 6px; padding: 10px; color: #cdd6f4; border: none; }
         #relTrajBtn:hover { background-color: #585b70; }
+        #graphThemeBtn { background-color: #45475a; border-radius: 6px; padding: 10px; color: #cdd6f4; border: none; font-weight: bold; }
+        #graphThemeBtn:hover { background-color: #585b70; }
         #graphScroll { border: none; background: transparent; }
         QScrollBar:vertical { background: #181825; width: 8px; }
         QScrollBar::handle:vertical { background: #45475a; border-radius: 4px; }
@@ -793,6 +838,38 @@ class Sports2DApp(QtWidgets.QMainWindow):
             self.rel_traj_btn.setText("Show Relative Traj.")
             self.rel_traj_btn.setStyleSheet("")
         self._set_frame(self.current_frame)
+
+    def _toggle_graph_theme(self):
+        """Toggle between dark and light graph backgrounds."""
+        self.graph_dark_mode = not self.graph_dark_mode
+        if self.graph_dark_mode:
+            self.graph_theme_btn.setText("  Graphs: Dark Mode")
+            self.graph_theme_btn.setIcon(qta.icon('fa5s.adjust', color='white'))
+            self.graph_theme_btn.setStyleSheet("")
+        else:
+            self.graph_theme_btn.setText("  Graphs: Light Mode")
+            self.graph_theme_btn.setIcon(qta.icon('fa5s.adjust', color='#1e1e2e'))
+            self.graph_theme_btn.setStyleSheet("background-color: #cdd6f4; color: #1e1e2e; font-weight: bold;")
+        self._apply_graph_theme()
+
+    def _apply_graph_theme(self):
+        """Re-apply styles to all graphs and re-plot data."""
+        graph_info = [
+            (self.graph_pos, 'Position', self.unit_name),
+            (self.graph_vel, 'Speed', f'{self.unit_name}/s'),
+            (self.graph_acc, 'Accel', f'{self.unit_name}/s\u00b2'),
+            (self.graph_ang_vel, '\u03c9', 'deg/s'),
+            (self.graph_ang_acc, '\u03b1', 'deg/s\u00b2'),
+            (self.graph_angle_180, '180\u2212\u03b8', 'deg'),
+        ]
+        for g, y_label, y_unit in graph_info:
+            self._style_graph(g, y_label, y_unit)
+        # Update the time cursor line color
+        cursor_color = '#F38BA8' if self.graph_dark_mode else '#CC3366'
+        for vl in self.v_lines:
+            vl.setPen(pg.mkPen(cursor_color, width=2))
+        # Re-plot with current data
+        self._update_all_graphs()
 
     # ── Data Loading ────────────────────────────────────────────────────────
 
@@ -1013,10 +1090,18 @@ class Sports2DApp(QtWidgets.QMainWindow):
             self._cache_angle_name = angle_col
             raw_angle = self.mot_data['angles'][angle_col]
             n = min(len(t), len(raw_angle))
-            self._cache_angle = raw_angle[:n]
+            
+            # Unwrap angles to avoid 360-degree artificial jumps (requires radians)
+            unwrapped_rad = np.unwrap(np.deg2rad(raw_angle[:n]))
+            unwrapped_deg = np.rad2deg(unwrapped_rad)
+            
+            # Smooth the angle BEFORE differentiating it to prevent massive noise spikes
+            self._cache_angle = smooth(unwrapped_deg)
             self._cache_angle_180 = 180.0 - self._cache_angle
+            
             ang_vel = np.gradient(self._cache_angle, dt)
             self._cache_ang_vel = smooth(ang_vel)
+            
             ang_acc = np.gradient(self._cache_ang_vel, dt)
             self._cache_ang_acc = smooth(ang_acc)
         else:
@@ -1033,59 +1118,77 @@ class Sports2DApp(QtWidgets.QMainWindow):
             return
         t = self._cache_time
 
+        # Theme-aware pen colors (store parameters, not QPen instances)
+        if self.graph_dark_mode:
+            c_x = {'color': '#F38BA8', 'width': 1.5}
+            c_y = {'color': '#89B4FA', 'width': 1.5}
+            c_total = {'color': '#A6E3A1', 'width': 2}
+            c_atotal = {'color': '#FAB387', 'width': 2}
+            c_angvel = {'color': '#CBA6F7', 'width': 2}
+            c_angacc = {'color': '#F9E2AF', 'width': 2}
+            c_180 = {'color': '#94E2D5', 'width': 2}
+        else:
+            c_x = {'color': '#CC3366', 'width': 2}
+            c_y = {'color': '#2266BB', 'width': 2}
+            c_total = {'color': '#22883A', 'width': 2.5}
+            c_atotal = {'color': '#CC6600', 'width': 2.5}
+            c_angvel = {'color': '#7733AA', 'width': 2.5}
+            c_angacc = {'color': '#AA8800', 'width': 2.5}
+            c_180 = {'color': '#118877', 'width': 2.5}
+
+        # Clear all graphs and their legends
+        for g, vl in zip([self.graph_pos, self.graph_vel, self.graph_acc, self.graph_ang_vel, self.graph_ang_acc, self.graph_angle_180], self.v_lines):
+            g.clear()
+            if g.plotItem.legend:
+                g.plotItem.legend.clear()
+            g.addItem(vl)
+
         # Position graph
-        self.graph_pos.clear()
-        self.graph_pos.addItem(self.v_lines[0])
         if self._cache_pos_x is not None:
             n = min(len(t), len(self._cache_pos_x))
-            self.graph_pos.plot(t[:n], self._cache_pos_x[:n], pen=pg.mkPen('#F38BA8', width=1.5), name="X")
-            self.graph_pos.plot(t[:n], self._cache_pos_y[:n], pen=pg.mkPen('#89B4FA', width=1.5), name="Y")
+            self.graph_pos.plot(t[:n], self._cache_pos_x[:n], pen=pg.mkPen(**c_x), name="X")
+            self.graph_pos.plot(t[:n], self._cache_pos_y[:n], pen=pg.mkPen(**c_y), name="Y")
 
-        self.graph_vel.clear()
-        self.graph_vel.addItem(self.v_lines[1])
+        # Velocity graph
         if self._cache_vx is not None:
             n = min(len(t), len(self._cache_vx))
-            self.graph_vel.plot(t[:n], self._cache_vx[:n], pen=pg.mkPen('#F38BA8', width=1.5), name="Vx")
-            self.graph_vel.plot(t[:n], self._cache_vy[:n], pen=pg.mkPen('#89B4FA', width=1.5), name="Vy")
-            self.graph_vel.plot(t[:n], self._cache_vtotal[:n], pen=pg.mkPen('#A6E3A1', width=2), name="Vtotal")
+            self.graph_vel.plot(t[:n], self._cache_vx[:n], pen=pg.mkPen(**c_x), name="Vx")
+            self.graph_vel.plot(t[:n], self._cache_vy[:n], pen=pg.mkPen(**c_y), name="Vy")
+            self.graph_vel.plot(t[:n], self._cache_vtotal[:n], pen=pg.mkPen(**c_total), name="Vtotal")
 
-        self.graph_acc.clear()
-        self.graph_acc.addItem(self.v_lines[2])
+        # Acceleration graph
         if self._cache_ax is not None:
             n = min(len(t), len(self._cache_ax))
-            self.graph_acc.plot(t[:n], self._cache_ax[:n], pen=pg.mkPen('#F38BA8', width=1.5), name="Ax")
-            self.graph_acc.plot(t[:n], self._cache_ay[:n], pen=pg.mkPen('#89B4FA', width=1.5), name="Ay")
-            self.graph_acc.plot(t[:n], self._cache_atotal[:n], pen=pg.mkPen('#FAB387', width=2), name="Atotal")
+            self.graph_acc.plot(t[:n], self._cache_ax[:n], pen=pg.mkPen(**c_x), name="Ax")
+            self.graph_acc.plot(t[:n], self._cache_ay[:n], pen=pg.mkPen(**c_y), name="Ay")
+            self.graph_acc.plot(t[:n], self._cache_atotal[:n], pen=pg.mkPen(**c_atotal), name="Atotal")
 
-        self.graph_ang_vel.clear()
-        self.graph_ang_vel.addItem(self.v_lines[3])
+        # Angular Velocity graph
         if self._cache_ang_vel is not None:
             label = self._cache_angle_name or "?"
             self.graph_ang_vel.setTitle(f"Angular Velocity: {label}")
             n = min(len(t), len(self._cache_ang_vel))
-            self.graph_ang_vel.plot(t[:n], self._cache_ang_vel[:n], pen=pg.mkPen('#CBA6F7', width=2))
+            self.graph_ang_vel.plot(t[:n], self._cache_ang_vel[:n], pen=pg.mkPen(**c_angvel))
         else:
             self.graph_ang_vel.setTitle("Angular Velocity (no angle data)")
 
-        self.graph_ang_acc.clear()
-        self.graph_ang_acc.addItem(self.v_lines[4])
+        # Angular Acceleration graph
         if self._cache_ang_acc is not None:
             label = self._cache_angle_name or "?"
             self.graph_ang_acc.setTitle(f"Angular Acceleration: {label}")
             n = min(len(t), len(self._cache_ang_acc))
-            self.graph_ang_acc.plot(t[:n], self._cache_ang_acc[:n], pen=pg.mkPen('#F9E2AF', width=2))
+            self.graph_ang_acc.plot(t[:n], self._cache_ang_acc[:n], pen=pg.mkPen(**c_angacc))
         else:
             self.graph_ang_acc.setTitle("Angular Acceleration (no angle data)")
 
-        self.graph_angle_180.clear()
-        self.graph_angle_180.addItem(self.v_lines[5])
+        # Supplementary Angle graph
         if self._cache_angle_180 is not None:
             label = self._cache_angle_name or "?"
-            self.graph_angle_180.setTitle(f"Supplementary Angle (180 − θ): {label}")
+            self.graph_angle_180.setTitle(f"Supplementary Angle (180 \u2212 \u03b8): {label}")
             n = min(len(t), len(self._cache_angle_180))
-            self.graph_angle_180.plot(t[:n], self._cache_angle_180[:n], pen=pg.mkPen('#94E2D5', width=2))
+            self.graph_angle_180.plot(t[:n], self._cache_angle_180[:n], pen=pg.mkPen(**c_180))
         else:
-            self.graph_angle_180.setTitle("Supplementary Angle 180 − θ (no angle data)")
+            self.graph_angle_180.setTitle("Supplementary Angle 180 \u2212 \u03b8 (no angle data)")
 
     # ── Stats ───────────────────────────────────────────────────────────────
 
@@ -1223,6 +1326,105 @@ class Sports2DApp(QtWidgets.QMainWindow):
         self.status_lbl.setText(f"CSV saved: {os.path.basename(path)}")
         self.status_lbl.setStyleSheet("color: #A6E3A1; font-size: 12px; font-weight: bold;")
 
+    def _export_motion_trail(self):
+        if not self.trc_data:
+            QtWidgets.QMessageBox.warning(self, "No Data", "Please load and analyze a video first.")
+            return
+
+        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save Motion Trail", 
+                                                             "segment_trajectory.png", "Images (*.png *.jpg)")
+        if not file_path:
+            return
+            
+        self.status_lbl.setText("Generating Motion Trail...")
+        QtWidgets.QApplication.processEvents()
+        
+        try:
+            import matplotlib.pyplot as plt
+            import matplotlib.cm as cm
+            
+            # Key segments to draw lines between
+            segments = [
+                ('Neck', 'MidHip'),
+                ('MidHip', 'RKnee'),
+                ('RKnee', 'RAnkle'),
+                ('MidHip', 'LKnee'),
+                ('LKnee', 'LAnkle'),
+                ('Neck', 'RShoulder'),
+                ('RShoulder', 'RElbow'),
+                ('RElbow', 'RWrist'),
+                ('Neck', 'LShoulder'),
+                ('LShoulder', 'LElbow'),
+                ('LElbow', 'LWrist')
+            ]
+            
+            # Nodes to plot scatter points for highlighting
+            nodes_to_plot = {
+                'MidHip': {'color': '#9ea3b5', 'label': 'Hip (center)', 'style': '--'},
+                'Neck': {'color': '#cba6f7', 'label': 'Head/Neck', 'style': ':'},
+                'RAnkle': {'color': '#f38ba8', 'label': 'R Ankle', 'style': '-.'},
+                'LAnkle': {'color': '#89b4fa', 'label': 'L Ankle', 'style': '-.'}
+            }
+            
+            markers = self.trc_data['markers']
+            num_frames = len(self.trc_data['time'])
+            
+            # Calculate scaling (invert Y axis since TRC origin is top-left, we want bottom-up for real world)
+            s = 1.0 / self.px_per_unit if self.px_per_unit else 1.0
+            
+            fig, ax = plt.subplots(figsize=(12, 10))
+            
+            # Draw trails for every Nth frame to avoid plotting too dense
+            step = max(1, num_frames // 100) 
+            
+            # 1. Draw connecting lines (stick figure) for each frame
+            for i in range(0, num_frames, step):
+                # Alpha fades from transparent to solid across time
+                alpha = 0.1 + 0.8 * (i / num_frames)
+                
+                for joint1, joint2 in segments:
+                    if joint1 in markers and joint2 in markers:
+                        x = [markers[joint1]['x'][i] * s, markers[joint2]['x'][i] * s]
+                        # Invert Y so up is positive
+                        y = [-markers[joint1]['y'][i] * s, -markers[joint2]['y'][i] * s]
+                        ax.plot(x, y, color='#45475a', alpha=alpha, linewidth=1.5)
+            
+            # 2. Draw highlighted node trajectories
+            for node, style_dict in nodes_to_plot.items():
+                if node in markers:
+                    x_pts = markers[node]['x'][::step] * s
+                    y_pts = -markers[node]['y'][::step] * s
+                    
+                    # Line
+                    ax.plot(x_pts, y_pts, color=style_dict['color'], linestyle=style_dict['style'], 
+                            linewidth=1.5, alpha=0.7, label=style_dict['label'])
+                    
+                    # Scatter points (fade alpha)
+                    colors = np.zeros((len(x_pts), 4))
+                    for idx in range(len(x_pts)):
+                        colors[idx] = plt.matplotlib.colors.to_rgba(style_dict['color'])
+                        colors[idx][3] = 0.2 + 0.8 * (idx / len(x_pts)) # alpha gradient
+                        
+                    ax.scatter(x_pts, y_pts, color=colors, s=30, zorder=5)
+
+            ax.set_title("Segment Trajectory (Stick Figure Motion Trail)", fontsize=18, fontweight='bold', pad=15)
+            ax.set_xlabel("Horizontal Position (meters)" if self.px_per_unit else "Horizontal Position (pixels)", fontsize=14)
+            ax.set_ylabel("Vertical Position (meters)" if self.px_per_unit else "Vertical Position (pixels)", fontsize=14)
+            
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc='upper left', fontsize=12)
+            
+            plt.tight_layout()
+            plt.savefig(file_path, dpi=300, bbox_inches='tight')
+            plt.close(fig)
+            
+            self.status_lbl.setText(f"Motion Trail saved: {os.path.basename(file_path)}")
+            self.status_lbl.setStyleSheet("color: #A6E3A1; font-size: 12px; font-weight: bold;")
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Export Error", f"Failed to generate Motion Trail:\n{e}")
+            self.status_lbl.setText("Export failed.")
+            self.status_lbl.setStyleSheet("color: #F38BA8; font-size: 12px;")
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
